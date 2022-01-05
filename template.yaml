@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: Example Echo-bot. Sending back all messages received
+
+Parameters:
+  # Telegram bot token value
+  # See https://core.telegram.org/bots#3-how-do-i-create-a-bot for details
+  TelegramBotToken:
+    Type: String
+    Description: Token to use for communication with Telegram severs
+    NoEcho: true
+
+Globals:
+  Function:
+    CodeUri: bot/
+    Runtime: ruby2.7
+    Environment:
+      Variables:
+        TELEGRAM_TOKEN: !Ref TelegramBotToken
+
+Resources:
+  ProcessCommandFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: main.message_handler
+      Timeout: 10
+      Events:
+        TelegramWebHook:
+          Type: Api
+          Properties:
+            Auth:
+              # Deny access to webhook endpoint for non-Telegram IP addresses
+              # CIDR list is taken from https://core.telegram.org/bots/webhooks
+              ResourcePolicy:
+                CustomStatements:
+                  - Effect: "Allow"
+                    Principal: "*"
+                    Action: "execute-api:Invoke"
+                    Resource: "execute-api:/*/*/*"
+                  - Effect: "Deny"
+                    Principal: "*"
+                    Action: "execute-api:Invoke"
+                    Resource: "execute-api:/*/*/*"
+                    Condition:
+                      NotIpAddress:
+                        "aws:SourceIp":
+                          - 149.154.160.0/20
+                          - 91.108.4.0/22
+            Path: '/hook'
+            Method: post
+  # Do not store logs older than 2 weeks
+  ProcessCommandLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProcessCommandFunction}"
+      RetentionInDays: 14
+
+Outputs:
+  # Example curl command to setup webhook
+  SetWebhookCommand:
+    Description: "Use this command to set WebHook"
+    Value: !Sub "curl -F \"url=https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hook/\" https://api.telegram.org/bot${TelegramBotToken}/setWebhook"
